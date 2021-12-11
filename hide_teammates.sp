@@ -19,20 +19,17 @@
 #include <cstrike>
 #include <colors_csgo>
 #include <clientprefs>
+#include <player_distance>
 #pragma semicolon 1
 #pragma newdecls required
 #define TAG_COLOR 	"{green}[SM]{default}"
 
 ConVar sm_hide_enabled, sm_hide_default_enabled, sm_hide_clientprefs_enabled, sm_hide_default_distance,sm_hide_minimum, sm_hide_maximum, sm_hide_team;
 
-Handle g_timer;
 Handle g_HideCookie;
-bool g_HidePlayers[MAXPLAYERS+1][MAXPLAYERS+1];
 bool bEnabled = true;
-float g_dHide[MAXPLAYERS+1];
-float timer_distance;
-float timer_vec_target[3];
-float timer_vec_client[3];
+
+Handle g_Rules[MAXPLAYERS + 1];
 
 public Plugin myinfo =  
 { 
@@ -59,6 +56,9 @@ public void OnPluginStart()
 
 	for(int client = 1; client <= MaxClients; client++)
 	{
+		Handle rule = PlayerDistance_CreateRule(client);
+		g_Rules[client] = rule;
+
 		if(IsClientInGame(client)) 
 		{
 			OnClientPutInServer(client);
@@ -67,26 +67,37 @@ public void OnPluginStart()
 				OnClientCookiesCached(client);
 			}
 		}
+		else
+		{
+			PlayerDistance_DisableRule(rule);
+		}
 	}
-} 
+}
 
-public void OnMapStart()
+public void OnPluginEnd()
 {
 	for(int client = 1; client <= MaxClients; client++)
 	{
-		for(int target = 1; target <= MaxClients; target++)
-		{
-			g_HidePlayers[client][target] = false;
-		}
+		CloseHandle(g_Rules[client]);
 	}
-	if(!bEnabled) return;
+}
 
-	g_timer = CreateTimer(0.1, HideTimer, _,TIMER_REPEAT|TIMER_FLAG_NO_MAPCHANGE);
+public void OnMapStart()
+{
+	for (int client = 1; client <= MaxClients; client++)
+	{
+		PlayerDistance_ResetRule(g_Rules[client]);
+	}
 }
 
 public void OnClientPutInServer(int client) 
 { 
 	if(!bEnabled) return;
+
+	if (!IsFakeClient(client))
+	{
+		PlayerDistance_EnableRule(g_Rules[client]);
+	}
 
 	SDKHook(client, SDKHook_SetTransmit, Hook_SetTransmit); 
 }
@@ -97,26 +108,25 @@ public void OnClientCookiesCached(int client)
 	
 	char sCookieValue[4];
 	GetClientCookie(client, g_HideCookie, sCookieValue, sizeof(sCookieValue));
-	
+
+	Handle rule = g_Rules[client];
+
 	if(sm_hide_clientprefs_enabled.BoolValue && !StrEqual(sCookieValue, ""))
 	{
-		g_dHide[client] = StringToFloat(sCookieValue);
-		g_dHide[client] = Pow(g_dHide[client], 2.0);
+		float value = StringToFloat(sCookieValue);
+		PlayerDistance_SettingAll(rule, value);
 	}
 	else if(sm_hide_default_enabled.BoolValue)
 	{
-		g_dHide[client] = sm_hide_default_distance.FloatValue;
-		g_dHide[client] = Pow(g_dHide[client], 2.0);
+		float value = sm_hide_default_distance.FloatValue;
+		PlayerDistance_SettingAll(rule, value);
 	}
 }
 
 public void OnClientDisconnect(int client)
 {
-	g_dHide[client] = 0.0;
-	for(int target = 1; target <= MaxClients; target++)
-	{
-		g_HidePlayers[client][target] = false;
-	}
+	Handle rule = g_Rules[client];
+	PlayerDistance_DisableRule(rule);
 }
 
 public void OnConVarChange(Handle hCvar, const char[] oldValue, const char[] newValue)
@@ -125,19 +135,11 @@ public void OnConVarChange(Handle hCvar, const char[] oldValue, const char[] new
 
 	if (hCvar == sm_hide_enabled)
 	{
-		if(g_timer != INVALID_HANDLE)
-		{
-			KillTimer(g_timer);
-		}
-
 		bEnabled = sm_hide_enabled.BoolValue;
 
 		for(int client = 1; client <= MaxClients; client++) 
 		{
-			for(int target = 1; target <= MaxClients; target++)
-			{
-				g_HidePlayers[client][target] = false;
-			}
+			PlayerDistance_ResetRule(g_Rules[client]);
 
 			if(IsClientInGame(client)) 
 			{
@@ -151,10 +153,6 @@ public void OnConVarChange(Handle hCvar, const char[] oldValue, const char[] new
 					SDKUnhook(client, SDKHook_SetTransmit, Hook_SetTransmit);
 				}
 			}
-		}
-		if(bEnabled)
-		{
-			g_timer = CreateTimer(0.1, HideTimer, _, TIMER_REPEAT|TIMER_FLAG_NO_MAPCHANGE);
 		}
 	}
 
@@ -193,74 +191,44 @@ public Action Command_Hide(int client, int args)
 		customdistance = StringToFloat(inputArgs);
 	}
 
-	if((!g_dHide[client] || args == 1 ) && ( customdistance == -1.0 || (customdistance >= sm_hide_minimum.IntValue && customdistance <= sm_hide_maximum.IntValue) ) )  
+	float value = 0.0;
+
+	if((args == 1 ) && ( customdistance == -1.0 || (customdistance >= sm_hide_minimum.IntValue && customdistance <= sm_hide_maximum.IntValue) ) )  
 	{
-		g_dHide[client] = (customdistance >= sm_hide_minimum.FloatValue && customdistance <= sm_hide_maximum.FloatValue) ? customdistance : sm_hide_default_distance.FloatValue;
-		CPrintToChat(client,"%s {red}!hide{default} teammates are now {lightgreen}Enabled{default} with distance{orange} %.0f{default}. %s", TAG_COLOR, g_dHide[client], sm_hide_team.IntValue == 1 ? "{lightblue}Only for CTs." : sm_hide_team.IntValue==2 ? "{lightblue}Only for Ts." : "");
+		value = (customdistance >= sm_hide_minimum.FloatValue && customdistance <= sm_hide_maximum.FloatValue) ? customdistance : sm_hide_default_distance.FloatValue;
+		CPrintToChat(client,"%s {red}!hide{default} teammates are now {lightgreen}Enabled{default} with distance{orange} %.0f{default}. %s", TAG_COLOR, value, sm_hide_team.IntValue == 1 ? "{lightblue}Only for CTs." : sm_hide_team.IntValue==2 ? "{lightblue}Only for Ts." : "");
 	}
 	else if (args >=2 || args == 1 ? customdistance != 0.0 && !(customdistance >= sm_hide_minimum.IntValue && customdistance <= sm_hide_maximum.IntValue) : false) 
 	{
 		CPrintToChat(client,"%s {red}!hide{default} Wrong input, range %d-%d", TAG_COLOR, sm_hide_minimum.IntValue, sm_hide_maximum.IntValue);
 	}
-	else if (g_dHide[client] || args == 1 && !customdistance) {
+	else if (args == 1 && !customdistance) {
 		CPrintToChat(client,"%s {red}!hide{default} teammates are now {red}Disabled{default}.", TAG_COLOR);
-		g_dHide[client] = 0.0; 
+		value = 0.0;
 	}
 
 	if(sm_hide_clientprefs_enabled.BoolValue)
 	{
 		char sCookieValue[4];
-		FormatEx(sCookieValue, sizeof(sCookieValue), "%.0f", g_dHide[client]);
+		FormatEx(sCookieValue, sizeof(sCookieValue), "%.0f", value);
 		SetClientCookie(client, g_HideCookie, sCookieValue);
 	}
 
-	g_dHide[client] = Pow(g_dHide[client], 2.0);
-	return Plugin_Handled; 
-} 
-
-public Action HideTimer(Handle timer)
-{
-	if(timer != g_timer || !bEnabled) 
-	{
-		KillTimer(timer);
-		return Plugin_Stop;
-	} 
-
-	for(int client = 1; client <= MaxClients; client++)
-	{
-		if(IsClientInGame(client) && IsPlayerAlive(client)) 
-		{
-			for(int target = 1; target <= MaxClients; target++)
-			{
-				if(target != client && g_dHide[client] && IsClientInGame(target) && IsPlayerAlive(target) && OnlyTeam(client, target))
-				{
-					GetClientAbsOrigin(target, timer_vec_target);
-					GetClientAbsOrigin(client, timer_vec_client);
-					timer_distance = GetVectorDistance(timer_vec_target, timer_vec_client, true);
-					if(timer_distance < g_dHide[client])
-					{
-						g_HidePlayers[client][target] = true;
-					} 
-					else 
-					{
-						g_HidePlayers[client][target] = false;
-					} 
-				}
-				else
-				{
-					g_HidePlayers[client][target] = false;
-				}
-			}
-		} 
-	} 
+	PlayerDistance_SettingAll(g_Rules[client], value);
 	return Plugin_Handled;
-}
+} 
 
 public Action Hook_SetTransmit(int target, int client) 
 { 
 	if(!bEnabled) return Plugin_Continue;
 
-	if(g_HidePlayers[client][target])
+	if (client == target || !IsClientInGame(client) || IsFakeClient(client))
+	{
+		return Plugin_Continue;
+	}
+
+	Handle rule = g_Rules[client];
+	if(OnlyTeam(client, target) && PlayerDistance_MatchRule(rule, target))
 	{
 		return Plugin_Handled;
 	}
