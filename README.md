@@ -1,4 +1,6 @@
-# [CS:GO] Hide teammates 1.2
+# This fork makes use of my [extension](https://github.com/intellild/sm_extension/tree/master/player_distance) which calculates player distances in realtime. As a result, everything is realtime now without 100ms delay.
+
+# [CS:GO] Hide teammates
 A plugin that can `!hide` teammates. Probably more **performance friendly** than most plugins like this. This
  plugin has several smart features that make it easier for the player to choose distance and is perfect for laser and boss fight.
 
