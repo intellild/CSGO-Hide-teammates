@@ -58,6 +58,7 @@ public void OnPluginStart()
 	{
 		Handle rule = PlayerDistance_CreateRule(client);
 		g_Rules[client] = rule;
+		PlayerDistance_SetRuleFlags(rule, EXCLUDE_SELF | EXCLUDE_ENERMY);
 
 		if(IsClientInGame(client)) 
 		{
@@ -222,13 +223,8 @@ public Action Hook_SetTransmit(int target, int client)
 { 
 	if(!bEnabled) return Plugin_Continue;
 
-	if (client == target || !IsClientInGame(client) || IsFakeClient(client))
-	{
-		return Plugin_Continue;
-	}
-
 	Handle rule = g_Rules[client];
-	if(OnlyTeam(client, target) && PlayerDistance_MatchRule(rule, target))
+	if(PlayerDistance_MatchRule(rule, target))
 	{
 		return Plugin_Handled;
 	}
