@@ -33,11 +33,11 @@ Handle g_Rules[MAXPLAYERS + 1];
 
 public Plugin myinfo =  
 { 
-	name = "[CS:GO] Hide teammates", 
-	author = "IT-KiLLER", 
-	description = "A plugin that can !hide teammates with individual distances", 
-	version = "1.2", 
-	url = "https://github.com/IT-KiLLER" 
+	name = "[CS:GO] Hide teammates realtime", 
+	author = "intellild", 
+	description = "A plugin that can !hide teammates with individual distances, in realtime", 
+	version = "2.0", 
+	url = "https://github.com/intellild/CSGO-Hide-teammates" 
 } 
 
 public void OnPluginStart() 
